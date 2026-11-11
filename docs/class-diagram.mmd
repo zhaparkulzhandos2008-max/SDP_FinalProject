@@ -1,0 +1,140 @@
+classDiagram
+direction LR
+class ComponentFactory {
+  <<abstract>>
+  +create(id,name,price,power,socket) Component
+  +make(...) Component
+  +of(type) ComponentFactory
+}
+class CpuFactory
+class MotherboardFactory
+class RamFactory
+class GpuFactory
+class StorageFactory
+class PsuFactory
+ComponentFactory <|-- CpuFactory
+ComponentFactory <|-- MotherboardFactory
+ComponentFactory <|-- RamFactory
+ComponentFactory <|-- GpuFactory
+ComponentFactory <|-- StorageFactory
+ComponentFactory <|-- PsuFactory
+class Component {
+  <<abstract>>
+  +type() ComponentType
+  +price()
+  +power()
+  +socket()
+}
+class Cpu
+class Gpu
+class Psu
+class OtherParts["Motherboard, Ram, Storage"]
+Component <|-- Cpu
+Component <|-- Gpu
+Component <|-- Psu
+Component <|-- OtherParts
+ComponentFactory ..> Component : creates
+
+class PcBuild {
+  -id
+  -name
+  -strategy
+  -parts
+  -upgrades
+  +toBuilder() Builder
+  +isComplete()
+}
+class Builder {
+  +name()
+  +part()
+  +upgrade()
+  +strategy()
+  +build() PcBuild
+}
+PcBuild "1" o-- "0..6" Component
+Builder ..> PcBuild : builds
+PcBuild ..> Builder : toBuilder()
+
+class PriceItem {
+  <<interface>>
+  +price() double
+  +describe(lines)
+}
+class BasePrice
+class PriceDecorator {
+  <<abstract>>
+  -inner PriceItem
+  +extra()
+}
+class Assembly
+class Rgb
+class Overclock
+class Warranty
+PriceItem <|.. BasePrice
+PriceItem <|.. PriceDecorator
+PriceDecorator o-- PriceItem : wraps
+PriceDecorator <|-- Assembly
+PriceDecorator <|-- Rgb
+PriceDecorator <|-- Overclock
+PriceDecorator <|-- Warranty
+
+class PricingStrategy {
+  <<interface>>
+  +code()
+  +label()
+  +discount(subtotal) double
+}
+class Standard
+class Student
+class Volume
+PricingStrategy <|.. Standard
+PricingStrategy <|.. Student
+PricingStrategy <|.. Volume
+class PriceCalculator {
+  +quote(PcBuild) Quote
+}
+PriceCalculator ..> PriceItem
+PriceCalculator ..> PricingStrategy
+
+class BuildEventBus {
+  +subscribe(l)
+  +publish(e)
+}
+class BuildListener {
+  <<interface>>
+  +onEvent(e)
+}
+class ActivityLog
+class CompatibilityWatcher
+BuildEventBus o-- BuildListener : notifies
+BuildListener <|.. ActivityLog
+BuildListener <|.. CompatibilityWatcher
+CompatibilityWatcher ..> BuildEventBus : publishes WARNING
+
+class SetupFacade {
+  +createBuild()
+  +renameBuild()
+  +setComponent()
+  +setUpgrade()
+  +setStrategy()
+  +summary()
+  +report()
+  +placeOrder()
+  +cancelOrder()
+}
+class Order {
+  <<record>>
+  id buildName total date status
+}
+class BuildRepository
+class OrderRepository
+class CompatibilityChecker
+class WebServer
+WebServer --> SetupFacade
+SetupFacade --> BuildRepository
+SetupFacade --> OrderRepository
+SetupFacade --> PriceCalculator
+SetupFacade --> CompatibilityChecker
+SetupFacade --> BuildEventBus
+SetupFacade ..> Order
+SetupFacade ..> PcBuild

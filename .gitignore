@@ -1,0 +1,7 @@
+/out/
+*.class
+/data/*.txt
+!data/.gitkeep
+.idea/
+.vscode/
+.DS_Store

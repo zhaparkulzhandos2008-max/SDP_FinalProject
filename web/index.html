@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build Your Setup</title>
+<style>
+:root{--bg:#f4f5f9;--card:#fff;--ink:#1c2230;--mut:#667085;--acc:#3b5bdb;--bad:#c92a2a;--ok:#2b8a3e;--line:#dde1ea}
+@media(prefers-color-scheme:dark){:root{--bg:#14171f;--card:#1d222d;--ink:#e8ebf2;--mut:#98a0b3;--acc:#8ea2ff;--bad:#ff8787;--ok:#69db7c;--line:#2d3342}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+h1{font-size:18px;margin:0}h2{font-size:15px;margin:0 0 10px}
+main{display:grid;grid-template-columns:260px 1fr 340px;gap:14px;padding:14px;max-width:1300px;margin:auto}
+@media(max-width:1000px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+label{display:block;margin:8px 0 2px;color:var(--mut);font-size:13px}
+select,input[type=text]{width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+button{padding:7px 12px;border:0;border-radius:6px;background:var(--acc);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--bad);padding:2px 6px}
+ul{list-style:none;padding:0;margin:0}li{padding:6px 0;border-bottom:1px solid var(--line)}
+li.build{cursor:pointer;display:flex;justify-content:space-between;align-items:center}li.sel{font-weight:600;color:var(--acc)}
+.bad{color:var(--bad)}.ok{color:var(--ok)}.mut{color:var(--mut);font-size:13px}.total{font-size:22px;font-weight:700;margin:10px 0}
+#msg{min-height:20px;font-weight:600}.row{display:flex;gap:6px}.chk{display:flex;gap:8px;align-items:center;margin:4px 0;color:var(--ink)}
+</style>
+</head>
+<body>
+<header><h1>Build Your Setup</h1><div id="msg"></div></header>
+<main>
+  <section class="card">
+    <h2>My builds</h2>
+    <div class="row"><input type="text" id="newName" placeholder="New build name" maxlength="60"><button onclick="createBuild()">Add</button></div>
+    <ul id="builds"></ul>
+  </section>
+  <section class="card" id="config"></section>
+  <section>
+    <div class="card" id="summary"></div>
+    <div class="card" style="margin-top:14px"><h2>Orders</h2><ul id="orders"></ul></div>
+    <div class="card" style="margin-top:14px"><h2>Activity</h2><ul id="activity"></ul></div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let catalog, builds = [], cur = null;
+
+function msg(text, bad) {
+  const m = $('#msg'); m.textContent = text; m.className = bad ? 'bad' : 'ok';
+  clearTimeout(msg.t); msg.t = setTimeout(() => m.textContent = '', 5000);
+}
+
+async function api(path, method = 'GET', data) {
+  const opt = { method };
+  if (data) { opt.headers = {'Content-Type': 'application/x-www-form-urlencoded'}; opt.body = new URLSearchParams(data).toString(); }
+  let r;
+  try { r = await fetch('/api/' + path, opt); }
+  catch (e) { msg('Cannot connect to server. Start it with run.bat / run.sh.', true); throw e; }
+  const t = await r.text();
+  if (!r.ok) { let m = t; try { m = JSON.parse(t).error } catch (e) {} msg(m, true); throw new Error(m); }
+  const contentType = r.headers.get('Content-Type') || '';
+  return contentType.includes('json') ? JSON.parse(t) : t;
+}
+
+async function refresh() {
+  builds = await api('builds');
+  if (!builds.find(b => b.id === cur)) cur = builds.length ? builds[0].id : null;
+  render();
+  renderOrders(await api('orders'));
+  $('#activity').innerHTML = (await api('activity')).map(a => `<li class="mut">${esc(a)}</li>`).join('') || '<li class="mut">No events yet</li>';
+}
+
+function render() {
+  $('#builds').innerHTML = builds.map(b => `<li class="build ${b.id === cur ? 'sel' : ''}" onclick="select('${b.id}')">
+    <span>${esc(b.name)}<br><span class="mut">$${b.total} ${b.complete ? '· complete' : '· incomplete'}</span></span>
+    <button class="ghost" title="Delete" onclick="event.stopPropagation();del('${b.id}')">✕</button></li>`).join('');
+  const s = builds.find(b => b.id === cur);
+  if (!s) { $('#config').innerHTML = '<h2>Configure</h2><p class="mut">Create or select a build.</p>'; $('#summary').innerHTML = ''; return; }
+
+  $('#config').innerHTML = `<h2>Configure</h2><div class="row"><input type="text" id="renameName" value="${esc(s.name)}" maxlength="60"><button onclick="renameBuild()">Rename</button></div>` + catalog.types.map(t => `<label>${t}</label>
+    <select onchange="setPart(this.value)"><option value="">— choose —</option>${
+      catalog.components.filter(c => c.type === t).map(c =>
+        `<option value="${c.id}" ${s.parts[t] && s.parts[t].id === c.id ? 'selected' : ''}>${esc(c.name)} — $${c.price}</option>`).join('')}
+    </select>`).join('') +
+    `<h2 style="margin-top:16px">Upgrades</h2>` + catalog.upgrades.map(u =>
+      `<label class="chk"><input type="checkbox" ${s.upgrades.includes(u.code) ? 'checked' : ''} onchange="setUpgrade('${u.code}',this.checked)">${esc(u.label)}</label>`).join('') +
+    `<h2 style="margin-top:16px">Pricing strategy</h2><select onchange="setStrategy(this.value)">${
+      catalog.strategies.map(x => `<option value="${x.code}" ${s.strategy === x.code ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`;
+
+  $('#summary').innerHTML = `<h2>Summary</h2>` +
+    (s.lines.length ? '<ul>' + s.lines.map(l => `<li>${esc(l)}</li>`).join('') + '</ul>' : '<p class="mut">No parts selected yet.</p>') +
+    `<div class="total">Total: $${s.total}</div>` +
+    (s.issues.length ? '<ul>' + s.issues.map(i => `<li class="bad">⚠ ${esc(i)}</li>`).join('') + '</ul>' : '') +
+    `<div class="row"><button onclick="exportReport()">Save report</button><button onclick="placeOrder()">Place order</button></div>`;
+}
+
+const renameBuild = () => act(() => api(`builds/${cur}/rename`, 'POST', {name: $('#renameName').value}));
+const placeOrder = () => act(async () => { const o = await api(`builds/${cur}/order`, 'POST', {}); msg('Order ' + o.id + ' placed', false); });
+const cancelOrder = id => act(() => api(`orders/${id}/cancel`, 'POST', {}));
+function renderOrders(list) {
+  $('#orders').innerHTML = list.map(o => `<li>${esc(o.buildName)} · $${o.total} · ${o.status}
+    ${o.status === 'PLACED' ? `<button class="ghost" onclick="cancelOrder('${o.id}')">cancel</button>` : ''}
+    <br><span class="mut">${o.date} · #${o.id}</span></li>`).join('') || '<li class="mut">No orders yet</li>';
+}
+const select = id => { cur = id; render(); };
+const act = async (fn) => { try { await fn(); await refresh(); } catch (e) { /* message already shown */ } };
+const createBuild = () => act(async () => { const b = await api('builds', 'POST', {name: $('#newName').value}); cur = b.id; $('#newName').value = ''; });
+const del = id => confirm('Delete this build?') && act(() => api('builds/' + id, 'DELETE'));
+const setPart = v => v && act(() => api(`builds/${cur}/component`, 'POST', {componentId: v}));
+const setUpgrade = (code, on) => act(() => api(`builds/${cur}/upgrade`, 'POST', {code, on}));
+const setStrategy = code => act(() => api(`builds/${cur}/strategy`, 'POST', {code}));
+
+async function exportReport() {
+  try {
+    const text = await api(`builds/${cur}/report`);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], {type: 'text/plain'}));
+    a.download = 'pc-build-report.txt'; a.click();
+    msg('Report saved', false); refresh();
+  } catch (e) { /* message already shown */ }
+}
+
+(async () => { catalog = await api('catalog'); refresh(); })();
+</script>
+</body>
+</html>

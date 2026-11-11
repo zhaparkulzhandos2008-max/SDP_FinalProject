@@ -1,0 +1,37 @@
+sequenceDiagram
+autonumber
+actor User
+participant UI as Browser (index.html)
+participant WS as WebServer
+participant F as SetupFacade
+participant C as Catalog
+participant B as PcBuild.Builder
+participant R as BuildRepository
+participant Bus as BuildEventBus
+participant Log as ActivityLog
+participant W as CompatibilityWatcher
+participant PC as PriceCalculator
+
+User->>UI: choose a part in the dropdown
+UI->>WS: POST /api/builds/{id}/component
+WS->>F: setComponent(buildId, componentId)
+F->>C: find(componentId)
+C-->>F: Component (made by ComponentFactory)
+F->>B: toBuilder().part(c).build()
+B-->>F: new immutable PcBuild
+F->>R: save(build)
+F->>Bus: publish(CHANGED)
+Bus->>Log: onEvent(CHANGED)
+Bus->>W: onEvent(CHANGED)
+W->>W: CompatibilityChecker.check(build)
+opt incompatible
+  W->>Bus: publish(WARNING)
+  Bus->>Log: onEvent(WARNING)
+end
+WS->>F: summary(buildId)
+F->>PC: quote(build)
+Note over PC: Decorator chain gives subtotal,<br/>Strategy gives discount
+PC-->>F: Quote
+F-->>WS: Summary (build, issues, quote)
+WS-->>UI: JSON
+UI-->>User: updated price, warnings, activity log
